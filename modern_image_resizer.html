@@ -222,6 +222,12 @@
       transform: translateY(0);
     }
 
+    .resize-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
     .preview-section {
       margin-top: 2rem;
       padding: 1.5rem;
@@ -259,11 +265,35 @@
       font-weight: 600;
       transition: transform 0.3s ease;
       box-shadow: 0 5px 15px rgba(240, 147, 251, 0.4);
+      margin-top: 1rem;
     }
 
     .download-link:hover {
       transform: translateY(-2px);
       box-shadow: 0 8px 25px rgba(240, 147, 251, 0.6);
+    }
+
+    .image-info {
+      background: white;
+      padding: 1rem;
+      border-radius: 10px;
+      margin: 1rem 0;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    .image-info p {
+      margin: 0.5rem 0;
+      font-size: 0.9rem;
+      color: #666;
+    }
+
+    .error-message {
+      color: #e74c3c;
+      background: #ffeaea;
+      padding: 1rem;
+      border-radius: 10px;
+      margin: 1rem 0;
+      border-left: 4px solid #e74c3c;
     }
 
     @media (max-width: 768px) {
@@ -316,11 +346,11 @@
           <h3>サイズ設定</h3>
           <div class="form-group">
             <label>幅（px）</label>
-            <input type="number" id="width" placeholder="幅を入力" />
+            <input type="number" id="width" placeholder="幅を入力" min="1" />
           </div>
           <div class="form-group">
             <label>高さ（px）</label>
-            <input type="number" id="height" placeholder="高さを入力" />
+            <input type="number" id="height" placeholder="高さを入力" min="1" />
           </div>
           <div class="checkbox-wrapper">
             <input type="checkbox" id="keepRatio" checked />
@@ -345,7 +375,7 @@
         </div>
       </div>
 
-      <button class="resize-button" onclick="resizeImage()">
+      <button class="resize-button" id="resizeBtn" onclick="resizeImage()">
         ✨ リサイズ実行
       </button>
 
@@ -361,64 +391,185 @@
     const heightInput = document.getElementById('height');
     const keepRatio = document.getElementById('keepRatio');
     const template = document.getElementById('template');
+    const resizeBtn = document.getElementById('resizeBtn');
+    const preview = document.getElementById('preview');
+    
     let originalImage = null;
+    let originalFile = null;
 
+    // テンプレート選択時の処理
     template.addEventListener('change', () => {
-      const [w, h] = template.value.split('x');
-      if (w && h) {
-        widthInput.value = w;
-        heightInput.value = h;
+      const value = template.value;
+      if (value) {
+        const [w, h] = value.split('x');
+        if (w && h) {
+          widthInput.value = w;
+          heightInput.value = h;
+        }
       }
     });
 
+    // アスペクト比維持の処理
+    widthInput.addEventListener('input', () => {
+      if (keepRatio.checked && originalImage && widthInput.value) {
+        const ratio = originalImage.height / originalImage.width;
+        heightInput.value = Math.round(parseInt(widthInput.value) * ratio);
+      }
+    });
+
+    heightInput.addEventListener('input', () => {
+      if (keepRatio.checked && originalImage && heightInput.value) {
+        const ratio = originalImage.width / originalImage.height;
+        widthInput.value = Math.round(parseInt(heightInput.value) * ratio);
+      }
+    });
+
+    // ファイルアップロード処理
     upload.addEventListener('change', (e) => {
       const file = e.target.files[0];
       if (!file) return;
+
+      // ファイルタイプチェック
+      if (!file.type.startsWith('image/')) {
+        showError('画像ファイルを選択してください。');
+        return;
+      }
+
+      originalFile = file;
       const reader = new FileReader();
+      
       reader.onload = function (event) {
         const img = new Image();
         img.onload = () => {
           originalImage = img;
-          document.getElementById('preview').innerHTML = '<h3>アップロード済み画像:</h3>';
-          document.getElementById('preview').appendChild(img);
+          
+          // 初期値を元画像のサイズに設定
+          if (!widthInput.value) widthInput.value = img.width;
+          if (!heightInput.value) heightInput.value = img.height;
+          
+          showImagePreview(img, '元の画像');
+          resizeBtn.disabled = false;
         };
+        
+        img.onerror = () => {
+          showError('画像の読み込みに失敗しました。');
+        };
+        
         img.src = event.target.result;
       };
+      
+      reader.onerror = () => {
+        showError('ファイルの読み込みに失敗しました。');
+      };
+      
       reader.readAsDataURL(file);
     });
 
+    function showImagePreview(img, title) {
+      const fileSize = originalFile ? (originalFile.size / 1024 / 1024).toFixed(2) : 'N/A';
+      
+      preview.innerHTML = `
+        <h3>${title}</h3>
+        <img src="${img.src}" alt="プレビュー画像" style="max-width: 100%; max-height: 400px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);">
+        <div class="image-info">
+          <p><strong>サイズ:</strong> ${img.width} × ${img.height} px</p>
+          <p><strong>ファイルサイズ:</strong> ${fileSize} MB</p>
+        </div>
+      `;
+    }
+
+    function showError(message) {
+      preview.innerHTML = `
+        <div class="error-message">
+          <strong>エラー:</strong> ${message}
+        </div>
+        <p>画像をアップロードしてください</p>
+      `;
+    }
+
     function resizeImage() {
-      if (!originalImage) return alert("画像をアップロードしてください");
+      if (!originalImage) {
+        showError('画像をアップロードしてください。');
+        return;
+      }
 
       let width = parseInt(widthInput.value);
       let height = parseInt(heightInput.value);
-      if (keepRatio.checked) {
-        const ratio = originalImage.width / originalImage.height;
-        if (!width && height) width = Math.round(height * ratio);
-        if (!height && width) height = Math.round(width / ratio);
+
+      if (!width && !height) {
+        showError('幅または高さを入力してください。');
+        return;
       }
 
-      const canvas = document.createElement('canvas');
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(originalImage, 0, 0, width, height);
+      // アスペクト比を維持する場合の計算
+      if (keepRatio.checked) {
+        const ratio = originalImage.width / originalImage.height;
+        if (!width && height) {
+          width = Math.round(height * ratio);
+        } else if (!height && width) {
+          height = Math.round(width / ratio);
+        }
+      }
 
-      const resizedDataUrl = canvas.toDataURL("image/jpeg");
+      // デフォルト値の設定
+      if (!width) width = originalImage.width;
+      if (!height) height = originalImage.height;
 
-      const resizedImg = new Image();
-      resizedImg.src = resizedDataUrl;
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        
+        const ctx = canvas.getContext('2d');
+        
+        // 高品質でリサイズ
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+        
+        ctx.drawImage(originalImage, 0, 0, width, height);
+
+        // JPEG品質を調整可能にする
+        const quality = 0.9;
+        const resizedDataUrl = canvas.toDataURL('image/jpeg', quality);
+
+        // リサイズされた画像を表示
+        const resizedImg = new Image();
+        resizedImg.onload = () => {
+          showResizedImage(resizedImg, resizedDataUrl, width, height);
+        };
+        resizedImg.src = resizedDataUrl;
+
+      } catch (error) {
+        showError('リサイズ処理中にエラーが発生しました: ' + error.message);
+      }
+    }
+
+    function showResizedImage(img, dataUrl, width, height) {
+      // データURLのサイズを計算（概算）
+      const base64Length = dataUrl.split(',')[1].length;
+      const sizeInBytes = base64Length * 0.75;
+      const sizeInMB = (sizeInBytes / 1024 / 1024).toFixed(2);
+
       const link = document.createElement('a');
-      link.href = resizedDataUrl;
-      link.download = 'resized.jpg';
+      link.href = dataUrl;
+      link.download = `resized_${width}x${height}.jpg`;
       link.textContent = '📥 ダウンロード';
       link.className = 'download-link';
 
-      const output = document.getElementById('preview');
-      output.innerHTML = '<h3>リサイズ後の画像:</h3>';
-      output.appendChild(resizedImg);
-      output.appendChild(link);
+      preview.innerHTML = `
+        <h3>リサイズ後の画像</h3>
+        <img src="${dataUrl}" alt="リサイズ後の画像" style="max-width: 100%; max-height: 400px; border-radius: 10px; box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);">
+        <div class="image-info">
+          <p><strong>サイズ:</strong> ${width} × ${height} px</p>
+          <p><strong>推定ファイルサイズ:</strong> ${sizeInMB} MB</p>
+        </div>
+      `;
+      
+      preview.appendChild(link);
     }
+
+    // 初期状態ではリサイズボタンを無効化
+    resizeBtn.disabled = true;
   </script>
 </body>
 </html>
